@@ -6,6 +6,8 @@
 //   node discord.mjs read [--limit N] [--after MESSAGE_ID]   # prints JSON (oldest first)
 //   node discord.mjs prs  [--limit N] [--after MESSAGE_ID]   # only messages containing GitHub PR links
 //   node discord.mjs send "text"                             # posts text (never pings anyone)
+//   node discord.mjs reply MESSAGE_ID "text"                 # replies to a message (never pings anyone)
+//   node discord.mjs react MESSAGE_ID EMOJI                  # adds a reaction as the bot
 //
 // Env:
 //   DISCORD_BOT_TOKEN   bot token (never printed or logged)
@@ -37,6 +39,7 @@ async function call(method, path, body) {
     // Only status + path are reported; the token is never included.
     die(`${method} ${path} -> ${res.status} ${(await res.text()).slice(0, 200)}`);
   }
+  if (res.status === 204) return null;
   return res.json();
 }
 
@@ -94,6 +97,22 @@ if (cmd === "read") {
     allowed_mentions: { parse: [] }, // never ping users, roles or @everyone
   });
   console.log(JSON.stringify({ id: msg.id, sent: true }));
+} else if (cmd === "reply") {
+  const [id, ...t] = args._;
+  const text = t.join(" ").trim();
+  if (!/^\d{17,20}$/.test(id ?? "") || !text) die('usage: node discord.mjs reply MESSAGE_ID "text"');
+  if (text.length > 2000) die("message too long (max 2000 chars)");
+  const msg = await call("POST", `/channels/${channel}/messages`, {
+    content: text,
+    allowed_mentions: { parse: [], replied_user: false },
+    message_reference: { message_id: id, fail_if_not_exists: false },
+  });
+  console.log(JSON.stringify({ id: msg.id, sent: true }));
+} else if (cmd === "react") {
+  const [id, emoji] = args._;
+  if (!/^\d{17,20}$/.test(id ?? "") || !emoji) die("usage: node discord.mjs react MESSAGE_ID EMOJI");
+  await call("PUT", `/channels/${channel}/messages/${id}/reactions/${encodeURIComponent(emoji)}/@me`);
+  console.log(JSON.stringify({ reacted: emoji, message: id }));
 } else {
-  die("usage: node discord.mjs <read|prs|send> [options]");
+  die("usage: node discord.mjs <read|prs|send|reply|react> [options]");
 }
